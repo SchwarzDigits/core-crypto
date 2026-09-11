@@ -10,6 +10,7 @@ members = [
   "obfuscate",
   "test-wire-server",
 ]
+exclude = ["vendor"]
 resolver = "2"
 
 [workspace.lints.clippy]
@@ -148,3 +149,8 @@ strip = false
 
 [profile.dev.package.backtrace]
 opt-level = 3
+
+[patch.crates-io]
+# libsqlite3-sys with the `bundled-sqlite3mc` feature for the keystore's native targets, see
+# vendor/libsqlite3-sys/sqlite3mc/README.md.
+libsqlite3-sys = { path = "vendor/libsqlite3-sys" }
