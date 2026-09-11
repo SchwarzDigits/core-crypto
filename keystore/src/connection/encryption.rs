@@ -18,8 +18,20 @@ pub(super) fn decrypt(conn: &mut rusqlite::Connection, key: &DatabaseKey) -> Cry
 }
 
 /// Reencrypt the database with a new key.
+///
+/// sqlite3mc refuses to rekey a database in WAL mode, so the database leaves WAL mode for the
+/// rekey and returns to it afterwards, even if the rekey fails. sqlcipher doesn't mind either way.
 pub(super) fn rekey(conn: &mut rusqlite::Connection, new_key: &DatabaseKey) -> CryptoKeystoreResult<()> {
-    set_key_pragma(conn, new_key, "rekey")
+    let journal_mode: String = conn.pragma_query_value(None, "journal_mode", |row| row.get(0))?;
+    let in_wal_mode = journal_mode.eq_ignore_ascii_case("wal");
+    if in_wal_mode {
+        conn.pragma_update(None, "journal_mode", "delete")?;
+    }
+    let result = set_key_pragma(conn, new_key, "rekey");
+    if in_wal_mode {
+        conn.pragma_update(None, "journal_mode", "wal")?;
+    }
+    result
 }
 
 #[cfg(not(target_os = "unknown"))]

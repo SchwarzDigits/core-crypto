@@ -263,6 +263,96 @@ impl Database {
 }
 
 #[cfg(all(test, not(target_os = "unknown")))]
+mod file_database_test {
+    use futures_lite::future;
+
+    use crate::connection::{Database, DatabaseKey};
+
+    const MARKER: &[u8] = b"plaintext marker 4711";
+
+    async fn journal_mode(db: &Database) -> String {
+        db.conn()
+            .await
+            .pragma_query_value(None, "journal_mode", |row| row.get(0))
+            .unwrap()
+    }
+
+    async fn insert_marker(db: &Database) {
+        let conn = db.conn().await;
+        conn.execute("CREATE TABLE marker (data BLOB)", []).unwrap();
+        conn.execute("INSERT INTO marker (data) VALUES (?1)", [MARKER]).unwrap();
+    }
+
+    async fn read_marker(db: &Database) -> Vec<u8> {
+        db.conn()
+            .await
+            .query_row("SELECT data FROM marker", [], |row| row.get(0))
+            .unwrap()
+    }
+
+    /// Neither the SQLite header nor the marker may be readable in the file.
+    fn assert_encrypted(path: &std::path::Path) {
+        let bytes = std::fs::read(path).unwrap();
+        assert!(
+            !bytes.starts_with(b"SQLite format 3\0"),
+            "{} has a plaintext header",
+            path.display()
+        );
+        assert!(
+            !bytes.windows(MARKER.len()).any(|window| window == MARKER),
+            "{} contains the plaintext marker",
+            path.display()
+        );
+    }
+
+    #[test]
+    fn update_key_reencrypts_a_database_in_wal_mode() {
+        future::block_on(async {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let path = temp_dir.path().join("rekey.db");
+            let path = path.to_str().unwrap();
+            let old_key = DatabaseKey::generate();
+            let new_key = DatabaseKey::generate();
+
+            let db = Database::open(path, &old_key).await.unwrap();
+            insert_marker(&db).await;
+            assert_eq!(journal_mode(&db).await, "wal");
+
+            db.update_key(&new_key).await.unwrap();
+
+            assert_eq!(journal_mode(&db).await, "wal", "update_key should return to WAL mode");
+            drop(db);
+            assert!(
+                Database::open(path, &old_key).await.is_err(),
+                "the old key still opens the database"
+            );
+            let db = Database::open(path, &new_key).await.unwrap();
+            assert_eq!(read_marker(&db).await, MARKER);
+        });
+    }
+
+    #[test]
+    fn exported_copy_is_encrypted_with_the_same_key() {
+        future::block_on(async {
+            let temp_dir = tempfile::tempdir().unwrap();
+            let source = temp_dir.path().join("source.db");
+            let copy = temp_dir.path().join("copy.db");
+            let key = DatabaseKey::generate();
+
+            let db = Database::open(source.to_str().unwrap(), &key).await.unwrap();
+            insert_marker(&db).await;
+            db.export_copy(copy.to_str().unwrap()).await.unwrap();
+            drop(db);
+
+            assert_encrypted(&source);
+            assert_encrypted(&copy);
+            let exported = Database::open(copy.to_str().unwrap(), &key).await.unwrap();
+            assert_eq!(read_marker(&exported).await, MARKER);
+        });
+    }
+}
+
+#[cfg(all(test, not(target_os = "unknown")))]
 mod export_test {
     use futures_lite::future;
 
