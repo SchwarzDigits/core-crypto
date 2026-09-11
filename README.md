@@ -34,6 +34,7 @@ express prior written consent of Wire Swiss GmbH.
     - [iOS](#ios)
     - [MacOS](#macos)
     - [Linux](#linux)
+    - [Windows](#windows)
     - [WASM](#wasm)
     - [Bindings](#bindings)
   - [Testing](#testing)
@@ -177,6 +178,16 @@ Install Linux targets:
 
 ```sh
 rustup target add x86_64-unknown-linux-gnu
+```
+
+### Windows<a name="windows"></a>
+
+The Windows JVM library is cross-compiled on Linux with MinGW:
+
+```sh
+sudo apt-get install gcc-mingw-w64-x86-64
+rustup target add x86_64-pc-windows-gnu
+make jvm-windows
 ```
 
 ### WASM<a name="wasm"></a>
@@ -654,7 +665,4 @@ The versioning scheme used is [SemVer AKA Semantic Versioning](https://semver.or
 
 #### Consider when making a release from a release branch<a name="consider-when-making-a-release-from-a-release-branch"></a>
 
-1. Isolate the changes to [index.md](docs/index.md) and [release notes](cc-book/src/release_notes.md) from the release
-   commit itself
-1. After the release is finished, cherry-pick the changes to [index.md](docs/index.md) and
-   [release notes](cc-book/src/release_notes.md) and get them into `main`
+1. Isolate the changes to [index.md](docs/index.md) and \[release notes\](cc-book/src/release\_
