@@ -71,11 +71,13 @@ linux_rule() {
 case "$target" in
   aarch64-apple-darwin)
     rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target aarch64-apple-darwin
-    # With the rust-src component, the standard library's paths would be this machine's too.
+    # With the rust-src component, the standard library's paths would be this machine's too, and the
+    # linker would name the library by its path in target/.
     sysroot="$(rustup run "$RUSTUP_TOOLCHAIN" rustc --print sysroot)"
     rustc_commit="$(rustup run "$RUSTUP_TOOLCHAIN" rustc -vV | sed -n 's/^commit-hash: //p')"
-    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit" \
-      make -B jvm-darwin RELEASE=1
+    flags="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit"
+    flags+=" -C link-arg=-Wl,-install_name,@rpath/libcore_crypto_ffi.dylib"
+    RUSTFLAGS="$flags" make -B jvm-darwin RELEASE=1
     ;;
   x86_64-unknown-linux-gnu) linux_rule x86_64 linux/amd64 jvm-linux ;;
   aarch64-unknown-linux-gnu) linux_rule aarch64 linux/arm64 jvm-linux-arm64 ;;
