@@ -17,6 +17,11 @@ cd "$repo"
 # The channel of rust-toolchain.toml, without the mobile targets it lists.
 RUSTUP_TOOLCHAIN="$(sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)"
 export RUSTUP_TOOLCHAIN
+# Reproducible builds: the build time that CoreCrypto embeds is the commit time, and the paths in
+# panic messages don't depend on where this machine keeps the Rust sources.
+SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+export SOURCE_DATE_EPOCH
+remap_cargo() { echo "--remap-path-prefix=$1=/cargo"; }
 
 # Runs a command in an Ubuntu container for <platform>, with this repository at the same path, the
 # host's Docker socket, and a Rust toolchain under target/jvm-release/<arch>.
@@ -34,6 +39,7 @@ in_linux() {
   fi
   docker run --rm --platform "$platform" "${volumes[@]}" --workdir "$repo" \
     --env CARGO_HOME="$home/cargo" --env RUSTUP_HOME="$home/rustup" --env RUSTUP_TOOLCHAIN \
+    --env RUSTFLAGS="$(remap_cargo "$home/cargo")" --env SOURCE_DATE_EPOCH \
     buildpack-deps:noble bash -euo pipefail -c '
       git config --global --add safe.directory "*"
       apt-get update -qq
@@ -54,7 +60,7 @@ in_linux() {
 linux_rule() {
   local arch="$1" platform="$2" rule="$3"
   if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = "$arch" ]; then
-    make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
+    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}")" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   else
     in_linux "$platform" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   fi
@@ -63,7 +69,11 @@ linux_rule() {
 case "$target" in
   aarch64-apple-darwin)
     rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target aarch64-apple-darwin
-    make jvm-darwin RELEASE=1
+    # With the rust-src component, the standard library's paths would be this machine's too.
+    sysroot="$(rustup run "$RUSTUP_TOOLCHAIN" rustc --print sysroot)"
+    rustc_commit="$(rustup run "$RUSTUP_TOOLCHAIN" rustc -vV | sed -n 's/^commit-hash: //p')"
+    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit" \
+      make jvm-darwin RELEASE=1
     ;;
   x86_64-unknown-linux-gnu) linux_rule x86_64 linux/amd64 jvm-linux ;;
   aarch64-unknown-linux-gnu) linux_rule aarch64 linux/arm64 jvm-linux-arm64 ;;

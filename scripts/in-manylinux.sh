@@ -53,4 +53,5 @@ exec docker run --rm --platform "$platform" \
   "${volumes[@]}" --workdir "$repo" \
   --env CARGO_HOME="$cargo_home" --env RUSTUP_HOME="$rustup_home" \
   --env RUSTFLAGS --env RUSTUP_TOOLCHAIN --env CARGO_NET_GIT_FETCH_WITH_CLI --env CARGO_TERM_COLOR \
+  --env SOURCE_DATE_EPOCH \
   "$image" bash -c 'export PATH="$CARGO_HOME/bin:$PATH"; exec "$@"' bash "$@"
