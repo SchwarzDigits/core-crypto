@@ -28,6 +28,11 @@ container that uses the host's Docker socket for the manylinux container. The co
 `target/jvm-release/`. The Rust version is the channel of `rust-toolchain.toml`. The script records the commit it built
 from in `target/jvm-release/built/<target>`.
 
+The builds are reproducible. `SOURCE_DATE_EPOCH` is the commit time, the paths of the Rust sources outside the
+repository are remapped, and the make rules always run, so cargo decides what to rebuild. CoreCrypto also embeds the
+branch name and `git describe`, so a release is built from a detached checkout of its tag. Anyone who checks out the tag
+and runs `build.sh` gets the libraries whose checksums the jar's manifest lists.
+
 ## Package
 
 `jvm-release/package.sh` builds the Maven publication into `target/jvm-release/maven/` and installs it into the local
@@ -76,7 +81,7 @@ jvm-release/third-party.py notices android 10.5.2-digits.1 THIRD_PARTY_NOTICES.t
 1. Tag the commit as `v10.5.2-digits.1` and push the tag to SchwarzDigits/core-crypto. `NATIVE-SOURCES.md` and the
    notices refer to it.
 
-1. Build the four natives from that commit, then run `package.sh`.
+1. Check out the tag (`git switch --detach v10.5.2-digits.1`), build the four natives, then run `package.sh`.
 
 1. Sign and bundle, in a terminal, since GnuPG asks for the passphrase:
 

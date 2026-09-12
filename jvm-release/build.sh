@@ -86,6 +86,9 @@ case "$target" in
     ;;
 esac
 ls -la target/"$target"/release/*core_crypto_ffi.*
-# jvm-release/package.sh packages the library only with the commit it was built from.
+# jvm-release/package.sh packages the library only with the commit it was built from, in a clean and
+# detached checkout: CoreCrypto embeds the branch name, and a checkout of the tag has none.
 mkdir -p target/jvm-release/built
-echo "$(git rev-parse HEAD)$([ -z "$(git status --porcelain)" ] || echo ' (dirty)')" > "target/jvm-release/built/$target"
+branch="$(git symbolic-ref -q --short HEAD || true)"
+echo "$(git rev-parse HEAD)$([ -z "$(git status --porcelain)" ] || echo ' (dirty)')${branch:+ (on branch $branch)}" \
+  > "target/jvm-release/built/$target"
