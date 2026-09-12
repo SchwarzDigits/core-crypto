@@ -22,6 +22,8 @@ export RUSTUP_TOOLCHAIN
 SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
 export SOURCE_DATE_EPOCH
 remap_cargo() { echo "--remap-path-prefix=$1=/cargo"; }
+# make's prerequisites don't cover these flags or the commit, so its rules always run (-B), and cargo
+# decides what to rebuild.
 
 # Runs a command in an Ubuntu container for <platform>, with this repository at the same path, the
 # host's Docker socket, and a Rust toolchain under target/jvm-release/<arch>.
@@ -60,9 +62,9 @@ in_linux() {
 linux_rule() {
   local arch="$1" platform="$2" rule="$3"
   if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = "$arch" ]; then
-    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}")" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
+    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}")" make -B "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   else
-    in_linux "$platform" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
+    in_linux "$platform" make -B "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   fi
 }
 
@@ -73,11 +75,11 @@ case "$target" in
     sysroot="$(rustup run "$RUSTUP_TOOLCHAIN" rustc --print sysroot)"
     rustc_commit="$(rustup run "$RUSTUP_TOOLCHAIN" rustc -vV | sed -n 's/^commit-hash: //p')"
     RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit" \
-      make jvm-darwin RELEASE=1
+      make -B jvm-darwin RELEASE=1
     ;;
   x86_64-unknown-linux-gnu) linux_rule x86_64 linux/amd64 jvm-linux ;;
   aarch64-unknown-linux-gnu) linux_rule aarch64 linux/arm64 jvm-linux-arm64 ;;
-  x86_64-pc-windows-gnu) in_linux "linux/$(docker version --format '{{.Server.Arch}}')" make jvm-windows RELEASE=1 ;;
+  x86_64-pc-windows-gnu) in_linux "linux/$(docker version --format '{{.Server.Arch}}')" make -B jvm-windows RELEASE=1 ;;
   *)
     echo "unsupported target: $target" >&2
     exit 1
