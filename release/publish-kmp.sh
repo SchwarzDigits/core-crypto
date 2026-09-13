@@ -72,7 +72,8 @@ group_dir="$(tr . / <<<"$GROUP")"
 rm -rf "$out/$group_dir"/core-crypto-kmp*
 (
   cd crypto-ffi/bindings
-  RELEASE=1 ./gradlew --console=plain -Dmaven.repo.local="$out" \
+  # Wire's build signs its publications when CI is set; here release/bundle.sh signs.
+  RELEASE=1 env -u CI ./gradlew --console=plain -Dmaven.repo.local="$out" \
     -PGROUP="$GROUP" -PVERSION_NAME="$VERSION" -PnoticesDir="$notices" \
     -PPOM_NAME=CoreCrypto \
     -PPOM_DESCRIPTION="CoreCrypto for Kotlin Multiplatform, a fork of wireapp/core-crypto: Android, iOS, and the JVM on Linux x86_64 and arm64 (glibc 2.28 or newer), macOS arm64 and Windows x86_64" \
