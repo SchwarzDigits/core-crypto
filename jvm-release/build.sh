@@ -36,8 +36,12 @@ host_rustflags() {
   rustc_commit="$(rustup run "$RUSTUP_TOOLCHAIN" rustc -vV | sed -n 's/^commit-hash: //p')"
   echo "$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit"
 }
-# make's prerequisites don't cover these flags or the commit, so its rules always run (-B), and cargo
-# decides what to rebuild.
+# make's prerequisites don't cover these flags or the commit, so the library goes first and make
+# always runs its rule; cargo decides what to rebuild. (make -B would reach OpenSSL's own make
+# through MAKEFLAGS and break its build.)
+out="target/$target/release"
+[ "$target" != ffi-library ] || out=target/release
+rm -f "$out"/*core_crypto_ffi.*
 
 # Runs a command in an Ubuntu container for <platform>, with this repository at the same path, the
 # host's Docker socket, and a Rust toolchain under target/jvm-release/<arch>.
@@ -76,9 +80,9 @@ in_linux() {
 linux_rule() {
   local arch="$1" platform="$2" rule="$3"
   if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = "$arch" ]; then
-    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}")" make -B "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
+    RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}")" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   else
-    in_linux "$platform" make -B "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
+    in_linux "$platform" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   fi
 }
 
@@ -94,7 +98,7 @@ case "$target" in
     # and times of the object files.
     flags="$(host_rustflags) -C link-arg=-Wl,-install_name,@rpath/libcore_crypto_ffi.dylib"
     flags+=" -C link-arg=-Wl,-reproducible -C link-arg=-Wl,-oso_prefix,$repo/"
-    RUSTFLAGS="$flags" make -B "$rule" RELEASE=1
+    RUSTFLAGS="$flags" make "$rule" RELEASE=1
     ;;
   aarch64-linux-android | armv7-linux-androideabi | x86_64-linux-android)
     : "${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME to the Android NDK}"
@@ -104,22 +108,20 @@ case "$target" in
       armv7-linux-androideabi) rule=android-armv7 ;;
       *) rule=android-x86 ;;
     esac
-    RUSTFLAGS="$(host_rustflags)" make -B "$rule" RELEASE=1
+    RUSTFLAGS="$(host_rustflags)" make "$rule" RELEASE=1
     ;;
   ffi-library)
     rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
-    RUSTFLAGS="$(host_rustflags)" make -B ffi-library RELEASE=1
+    RUSTFLAGS="$(host_rustflags)" make ffi-library RELEASE=1
     ;;
   x86_64-unknown-linux-gnu) linux_rule x86_64 linux/amd64 jvm-linux ;;
   aarch64-unknown-linux-gnu) linux_rule aarch64 linux/arm64 jvm-linux-arm64 ;;
-  x86_64-pc-windows-gnu) in_linux "linux/$(docker version --format '{{.Server.Arch}}')" make -B jvm-windows RELEASE=1 ;;
+  x86_64-pc-windows-gnu) in_linux "linux/$(docker version --format '{{.Server.Arch}}')" make jvm-windows RELEASE=1 ;;
   *)
     echo "unsupported target: $target" >&2
     exit 1
     ;;
 esac
-out="target/$target/release"
-[ "$target" != ffi-library ] || out=target/release
 ls -la "$out"/*core_crypto_ffi.*
 # jvm-release/package.sh packages the library only with the commit it was built from, in a clean and
 # detached checkout: CoreCrypto embeds the branch name, and a checkout of the tag has none.
