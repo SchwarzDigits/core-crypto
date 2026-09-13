@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Builds CoreCrypto's JVM native library for one JVM target with the make rules of this branch,
-# as Wire's release build does (RELEASE=1):
-#   aarch64-apple-darwin       make jvm-darwin, on a Mac with rustup
+# Builds one of CoreCrypto's native libraries with the make rules of this branch, as Wire's release
+# build does (RELEASE=1):
+#   aarch64-apple-darwin       make jvm-darwin, on a Mac with rustup; also the macOS static library
 #   x86_64-unknown-linux-gnu   make jvm-linux, in the manylinux_2_28 container
 #   aarch64-unknown-linux-gnu  make jvm-linux-arm64, in the manylinux_2_28 container
 #   x86_64-pc-windows-gnu      make jvm-windows, cross-compiled with MinGW
+#   aarch64-linux-android      make android-armv8, with the Android NDK in ANDROID_NDK_HOME
+#   armv7-linux-androideabi    make android-armv7, with the Android NDK
+#   x86_64-linux-android       make android-x86, with the Android NDK
+#   aarch64-apple-ios          make ios-device, on a Mac with Xcode
+#   aarch64-apple-ios-sim      make ios-simulator-arm, on a Mac with Xcode
+#   ffi-library                make ffi-library, the host library the Kotlin bindings come from
 # On a Linux host of the right architecture, the Linux rules run directly. Otherwise they run in an
 # Ubuntu container that uses the host's Docker socket; so does the Windows build.
 #
@@ -22,6 +28,14 @@ export RUSTUP_TOOLCHAIN
 SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
 export SOURCE_DATE_EPOCH
 remap_cargo() { echo "--remap-path-prefix=$1=/cargo"; }
+# For builds on this host. With the rust-src component, the standard library's paths would be this
+# machine's too.
+host_rustflags() {
+  local sysroot rustc_commit
+  sysroot="$(rustup run "$RUSTUP_TOOLCHAIN" rustc --print sysroot)"
+  rustc_commit="$(rustup run "$RUSTUP_TOOLCHAIN" rustc -vV | sed -n 's/^commit-hash: //p')"
+  echo "$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit"
+}
 # make's prerequisites don't cover these flags or the commit, so its rules always run (-B), and cargo
 # decides what to rebuild.
 
@@ -69,17 +83,32 @@ linux_rule() {
 }
 
 case "$target" in
-  aarch64-apple-darwin)
-    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target aarch64-apple-darwin
-    # With the rust-src component, the standard library's paths would be this machine's too. The
-    # linker would name the library by its path in target/, and derive its UUID from the paths and
-    # times of the object files.
-    sysroot="$(rustup run "$RUSTUP_TOOLCHAIN" rustc --print sysroot)"
-    rustc_commit="$(rustup run "$RUSTUP_TOOLCHAIN" rustc -vV | sed -n 's/^commit-hash: //p')"
-    flags="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}") --remap-path-prefix=$sysroot/lib/rustlib/src/rust=/rustc/$rustc_commit"
-    flags+=" -C link-arg=-Wl,-install_name,@rpath/libcore_crypto_ffi.dylib"
+  aarch64-apple-darwin | aarch64-apple-ios | aarch64-apple-ios-sim)
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$target"
+    case "$target" in
+      aarch64-apple-darwin) rule=jvm-darwin ;;
+      aarch64-apple-ios) rule=ios-device ;;
+      *) rule=ios-simulator-arm ;;
+    esac
+    # The linker would name the library by its path in target/, and derive its UUID from the paths
+    # and times of the object files.
+    flags="$(host_rustflags) -C link-arg=-Wl,-install_name,@rpath/libcore_crypto_ffi.dylib"
     flags+=" -C link-arg=-Wl,-reproducible -C link-arg=-Wl,-oso_prefix,$repo/"
-    RUSTFLAGS="$flags" make -B jvm-darwin RELEASE=1
+    RUSTFLAGS="$flags" make -B "$rule" RELEASE=1
+    ;;
+  aarch64-linux-android | armv7-linux-androideabi | x86_64-linux-android)
+    : "${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME to the Android NDK}"
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$target"
+    case "$target" in
+      aarch64-linux-android) rule=android-armv8 ;;
+      armv7-linux-androideabi) rule=android-armv7 ;;
+      *) rule=android-x86 ;;
+    esac
+    RUSTFLAGS="$(host_rustflags)" make -B "$rule" RELEASE=1
+    ;;
+  ffi-library)
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
+    RUSTFLAGS="$(host_rustflags)" make -B ffi-library RELEASE=1
     ;;
   x86_64-unknown-linux-gnu) linux_rule x86_64 linux/amd64 jvm-linux ;;
   aarch64-unknown-linux-gnu) linux_rule aarch64 linux/arm64 jvm-linux-arm64 ;;
@@ -89,7 +118,9 @@ case "$target" in
     exit 1
     ;;
 esac
-ls -la target/"$target"/release/*core_crypto_ffi.*
+out="target/$target/release"
+[ "$target" != ffi-library ] || out=target/release
+ls -la "$out"/*core_crypto_ffi.*
 # jvm-release/package.sh packages the library only with the commit it was built from, in a clean and
 # detached checkout: CoreCrypto embeds the branch name, and a checkout of the tag has none.
 mkdir -p target/jvm-release/built
