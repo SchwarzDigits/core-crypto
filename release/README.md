@@ -58,9 +58,10 @@ VERSION=10.5.2-digits.1 release/publish-kmp.sh --m2
 - **`core-crypto-kmp-android`:** the three Android libraries in the aar.
 - **`core-crypto-kmp-iosarm64`, `-iossimulatorarm64`, `-macosarm64`:** the static library in the cinterop klib.
 
-Each module has its SBOM next to it, `<module>-<version>-cyclonedx.json`, in CycloneDX 1.5. The jvm jar and the aar
-carry `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.txt` in `META-INF/core-crypto-kmp/`; the klib modules have the
-notices next to them, `<module>-<version>-third-party-notices.txt`.
+Wire's build file stays as it is: `release/kmp.init.gradle`, which the script passes with `--init-script`, adds the JVM
+libraries and the licence files. Each module has its SBOM next to it, `<module>-<version>-cyclonedx.json`, in CycloneDX
+1.5. The jvm jar and the aar carry `LICENSE`, `NOTICE` and `THIRD_PARTY_NOTICES.txt` in `META-INF/core-crypto-kmp/`; the
+klib modules have the notices next to them, `<module>-<version>-third-party-notices.txt`.
 
 The script publishes only libraries that `build.sh` built from the current commit; `UNRELEASED=1` skips that check, for
 tests. Gradle needs JDK 25 (`JAVA_HOME`) and the Android SDK (`ANDROID_HOME`). At the end, `release/check.py` checks the

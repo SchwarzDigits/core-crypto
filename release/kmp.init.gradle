@@ -1,0 +1,61 @@
+// Adds to Wire's build of core-crypto-kmp what the release needs, without changing Wire's build
+// file; release/publish-kmp.sh passes it with --init-script.
+//
+// - The jvm variant carries the libraries of the four JVM targets, built outside Gradle like the
+//   others, in the directories where JNA looks for them. Gobley would put only the host's library
+//   into a separate jar, which the published metadata doesn't name.
+// - The jvm jar and the aar carry LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt, which
+//   release/publish-kmp.sh writes into <noticesDir>/<variant>/META-INF/core-crypto-kmp/.
+//
+// Groovy, since an init script doesn't see the classes of the build's plugins.
+
+gradle.beforeProject { project ->
+    if (project.path != ':core-crypto-kmp') {
+        return
+    }
+    def release = System.getenv('RELEASE') == '1'
+    def target = new File(project.rootDir, '../../target')
+    def libraries = [
+        'linux-x86-64'  : 'x86_64-unknown-linux-gnu/%s/libcore_crypto_ffi.so',
+        'linux-aarch64' : 'aarch64-unknown-linux-gnu/%s/libcore_crypto_ffi.so',
+        'darwin-aarch64': 'aarch64-apple-darwin/%s/libcore_crypto_ffi.dylib',
+        'win32-x86-64'  : 'x86_64-pc-windows-gnu/%s/core_crypto_ffi.dll',
+    ].collectEntries { jnaPrefix, path -> [jnaPrefix, new File(target, String.format(path, release ? 'release' : 'debug'))] }
+    def copyJvmFfiLibraries = project.tasks.register('copyJvmFfiLibraries', Sync) {
+        doFirst {
+            def missing = libraries.values().findAll { !it.exists() }
+            if (release && missing) {
+                throw new GradleException("missing JVM libraries: $missing")
+            }
+        }
+        libraries.each { jnaPrefix, file -> from(file) { into(jnaPrefix) } }
+        into(project.layout.buildDirectory.dir('jvmFfiLibraries'))
+    }
+    def notices = project.findProperty('noticesDir')
+
+    project.plugins.withId('org.jetbrains.kotlin.multiplatform') {
+        project.kotlin.sourceSets.matching { it.name == 'jvmMain' }.configureEach {
+            resources.srcDir(copyJvmFfiLibraries)
+            if (notices) {
+                resources.srcDir(new File(notices, 'jvm'))
+            }
+        }
+    }
+    // The Android plugin takes its Java resources from its own source set, not from androidMain.
+    project.plugins.withId('com.android.library') {
+        if (notices) {
+            project.android.sourceSets.main.resources.srcDir(new File(notices, 'android'))
+        }
+    }
+    // After Wire's build script, which embeds the host's library, and before Gobley reads the setting,
+    // since this hook comes first. Only the JVM builds; the Android ones embed the aar's libraries.
+    project.afterEvaluate {
+        def cargo = project.extensions.getByName('cargo')
+        def jvmBuild = cargo.class.classLoader.loadClass('gobley.gradle.cargo.dsl.CargoJvmBuild')
+        cargo.builds.each { build ->
+            if (jvmBuild.isInstance(build)) {
+                build.embedRustLibrary.set(false)
+            }
+        }
+    }
+}
