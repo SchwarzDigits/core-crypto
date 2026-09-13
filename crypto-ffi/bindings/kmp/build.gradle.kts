@@ -31,6 +31,28 @@ val dokkaHtmlJar = tasks.register<Jar>("dokkaHtmlJar") {
 
 val buildVariant = if (System.getenv("RELEASE") == "1") Variant.Release else Variant.Debug
 
+// The libraries of the four JVM targets, built outside Gradle like the others, in the directories
+// where JNA looks for them.
+val copyJvmFfiLibraries by tasks.registering(Sync::class) {
+    val buildType = if (buildVariant == Variant.Release) "release" else "debug"
+    val libraries = listOf(
+        Triple("x86_64-unknown-linux-gnu", "linux-x86-64", "libcore_crypto_ffi.so"),
+        Triple("aarch64-unknown-linux-gnu", "linux-aarch64", "libcore_crypto_ffi.so"),
+        Triple("aarch64-apple-darwin", "darwin-aarch64", "libcore_crypto_ffi.dylib"),
+        Triple("x86_64-pc-windows-gnu", "win32-x86-64", "core_crypto_ffi.dll"),
+    ).map { (rustTarget, jnaPrefix, name) ->
+        jnaPrefix to layout.projectDirectory.file("../../../target/$rustTarget/$buildType/$name").asFile
+    }
+    doFirst {
+        val missing = libraries.map { it.second }.filterNot { it.exists() }
+        if (buildVariant == Variant.Release && missing.isNotEmpty()) {
+            throw GradleException("missing JVM libraries: $missing")
+        }
+    }
+    libraries.forEach { (jnaPrefix, file) -> from(file) { into(jnaPrefix) } }
+    into(layout.buildDirectory.dir("jvmFfiLibraries"))
+}
+
 kotlin {
     jvmToolchain(25)
 
@@ -80,6 +102,7 @@ kotlin {
             dependencies {
                 implementation(libs.jna)
             }
+            resources.srcDir(copyJvmFfiLibraries)
         }
 
         val jvmTest by getting {
@@ -134,10 +157,10 @@ cargo {
     jvmVariant = buildVariant
     nativeVariant = buildVariant
 
-    // Only build JVM native libraries for the current host platform
-    // This disables cross-compilation for other JVM targets (e.g., Linux ARM64 on macOS)
+    // The jvm variant carries the libraries of all four JVM targets (copyJvmFfiLibraries), instead
+    // of a separate jar with the host's library, which its published metadata doesn't name.
     builds.jvm {
-        embedRustLibrary = (rustTarget == GobleyHost.current.rustTarget)
+        embedRustLibrary = false
     }
 }
 
