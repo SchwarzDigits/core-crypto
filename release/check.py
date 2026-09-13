@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Checks the Maven publication of core-crypto-jvm in target/jvm-release/maven/ before it's uploaded.
+"""Checks the Maven publication of core-crypto-jvm in target/digits/maven/ before it's uploaded.
 
-  jvm-release/check.py [--signed] <version>
+  release/check.py [--signed] <version>
 
-It compares the jars with Wire's release in target/jvm-release/wire/ (the same Kotlin classes, sources
+It compares the jars with Wire's release in target/digits/wire/ (the same Kotlin classes, sources
 and documentation; the natives the manifest names; the licence files), checks the fields Maven Central
 requires in the POM and its dependencies against Wire's POM, and checks the SBOM against the jar.
-With --signed, it also verifies the signatures and checksums that jvm-release/bundle.sh adds.
+With --signed, it also verifies the signatures and checksums that release/bundle.sh adds.
 UNRELEASED=1 accepts a jar built from a working tree with changes, for tests.
 """
 import hashlib
@@ -75,8 +75,8 @@ def main():
         raise SystemExit(__doc__)
     version = args[0]
     wire_version = re.fullmatch(r"(\d+\.\d+\.\d+)-digits\.\d+", version).group(1)
-    out = ROOT / "target/jvm-release/maven" / GROUP.replace(".", "/") / ARTIFACT / version
-    wire = ROOT / "target/jvm-release/wire" / wire_version
+    out = ROOT / "target/digits/maven" / GROUP.replace(".", "/") / ARTIFACT / version
+    wire = ROOT / "target/digits/wire" / wire_version
     base = out / f"{ARTIFACT}-{version}"
     files = {suffix: Path(f"{base}{suffix}")
              for suffix in (".jar", "-sources.jar", "-javadoc.jar", ".pom", "-cyclonedx.json")}

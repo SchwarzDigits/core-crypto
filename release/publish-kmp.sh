@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Publishes CoreCrypto's Kotlin Multiplatform artifact, schwarz.opensource.natrium:core-crypto-kmp,
-# with Wire's Gradle build of this branch into target/jvm-release/maven/ (Maven layout):
+# with Wire's Gradle build of this branch into target/digits/maven/ (Maven layout):
 #   core-crypto-kmp                     the common metadata
 #   core-crypto-kmp-jvm                 the libraries of Linux x86_64 and arm64, macOS arm64, Windows x86_64
 #   core-crypto-kmp-android             arm64-v8a, armeabi-v7a, x86_64
@@ -8,10 +8,10 @@
 #   core-crypto-kmp-iossimulatorarm64   the iOS simulator on Apple silicon
 #   core-crypto-kmp-macosarm64          Kotlin/Native on macOS arm64
 #
-#   VERSION=10.5.2-digits.1 jvm-release/publish-kmp.sh [--m2]
+#   VERSION=10.5.2-digits.1 release/publish-kmp.sh [--m2]
 #
 # --m2 also copies the publication into the local Maven repository (~/.m2/repository). The native
-# libraries come from target/<target>/release, where jvm-release/build.sh puts them; each has to be
+# libraries come from target/<target>/release, where release/build.sh puts them; each has to be
 # built from the current commit, in a clean and detached checkout. UNRELEASED=1 skips that check, for
 # tests. Gradle needs JDK 25 (JAVA_HOME) and the Android SDK (ANDROID_HOME).
 set -euo pipefail
@@ -27,14 +27,14 @@ repo="$(pwd)"
 
 commit="$(git rev-parse HEAD)"
 for target in "${TARGETS[@]}"; do
-  stamp="$(cat "target/jvm-release/built/$target" 2>/dev/null || true)"
+  stamp="$(cat "target/digits/built/$target" 2>/dev/null || true)"
   if [ "$stamp" != "$commit" ] && [ "${UNRELEASED:-}" != 1 ]; then
-    echo "$target was built from ${stamp:-an unknown commit}, not $commit; run jvm-release/build.sh $target" >&2
+    echo "$target was built from ${stamp:-an unknown commit}, not $commit; run release/build.sh $target" >&2
     exit 1
   fi
 done
 
-out="$repo/target/jvm-release/maven"
+out="$repo/target/digits/maven"
 group_dir="$(tr . / <<<"$GROUP")"
 rm -rf "$out/$group_dir"/core-crypto-kmp*
 (

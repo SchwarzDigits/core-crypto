@@ -14,7 +14,7 @@
 # On a Linux host of the right architecture, the Linux rules run directly. Otherwise they run in an
 # Ubuntu container that uses the host's Docker socket; so does the Windows build.
 #
-#   jvm-release/build.sh <target>
+#   release/build.sh <target>
 set -euo pipefail
 
 target="$1"
@@ -44,11 +44,11 @@ out="target/$target/release"
 rm -f "$out"/*core_crypto_ffi.*
 
 # Runs a command in an Ubuntu container for <platform>, with this repository at the same path, the
-# host's Docker socket, and a Rust toolchain under target/jvm-release/<arch>.
+# host's Docker socket, and a Rust toolchain under target/digits/<arch>.
 in_linux() {
   local platform="$1"
   shift
-  local home="$repo/target/jvm-release/${platform#linux/}"
+  local home="$repo/target/digits/${platform#linux/}"
   mkdir -p "$home"
   local volumes=(--volume /var/run/docker.sock:/var/run/docker.sock --volume "$repo:$repo")
   # make and the build scripts call git. In a linked worktree, the git directory lies outside it.
@@ -126,9 +126,9 @@ case "$target" in
     ;;
 esac
 ls -la "$out"/*core_crypto_ffi.*
-# jvm-release/package.sh packages the library only with the commit it was built from, in a clean and
+# release/package.sh packages the library only with the commit it was built from, in a clean and
 # detached checkout: CoreCrypto embeds the branch name, and a checkout of the tag has none.
-mkdir -p target/jvm-release/built
+mkdir -p target/digits/built
 branch="$(git symbolic-ref -q --short HEAD || true)"
 echo "$(git rev-parse HEAD)$([ -z "$(git status --porcelain)" ] || echo ' (dirty)')${branch:+ (on branch $branch)}" \
-  > "target/jvm-release/built/$target"
+  > "target/digits/built/$target"

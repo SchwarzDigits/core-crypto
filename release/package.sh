@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Builds the Maven publication of core-crypto-jvm from Wire's release of the same version and the
-# JVM natives of this branch, into target/jvm-release/maven/ and the local Maven repository
+# JVM natives of this branch, into target/digits/maven/ and the local Maven repository
 # (~/.m2/repository):
 #
 #   core-crypto-jvm-<version>.jar             Wire's Kotlin classes, byte for byte, the natives of this
@@ -10,11 +10,11 @@
 #   core-crypto-jvm-<version>.pom             Wire's dependencies, with this project's data
 #   core-crypto-jvm-<version>-cyclonedx.json  the SBOM, in CycloneDX 1.5
 #
-#   VERSION=10.5.2-digits.1 jvm-release/package.sh
+#   VERSION=10.5.2-digits.1 release/package.sh
 #
 # VERSION is Wire's version with the patch set. Wire's files of that version are downloaded from
-# Maven Central into target/jvm-release/wire/ and checked against Central's SHA-512 checksums.
-# The natives come from target/<target>/release, where jvm-release/build.sh puts them.
+# Maven Central into target/digits/wire/ and checked against Central's SHA-512 checksums.
+# The natives come from target/<target>/release, where release/build.sh puts them.
 #
 # A publication needs a clean working tree. UNRELEASED=1 allows local changes, for tests.
 set -euo pipefail
@@ -42,7 +42,7 @@ natives=(
   "win32-x86-64/core_crypto_ffi.dll:x86_64-pc-windows-gnu/release/core_crypto_ffi.dll"
 )
 
-wire="target/jvm-release/wire/$WIRE_VERSION"
+wire="target/digits/wire/$WIRE_VERSION"
 mkdir -p "$wire"
 for f in $ARTIFACT-$WIRE_VERSION{.jar,-sources.jar,-javadoc.jar,.pom}; do
   url="https://repo1.maven.org/maven2/com/wire/$ARTIFACT/$WIRE_VERSION/$f"
@@ -53,14 +53,14 @@ for f in $ARTIFACT-$WIRE_VERSION{.jar,-sources.jar,-javadoc.jar,.pom}; do
     { echo "$wire/$f does not match Maven Central's SHA-512" >&2; rm -f "$wire/$f"; exit 1; }
 done
 
-out="target/jvm-release/maven/$(tr . / <<<"$GROUP")/$ARTIFACT/$VERSION"
+out="target/digits/maven/$(tr . / <<<"$GROUP")/$ARTIFACT/$VERSION"
 base="$out/$ARTIFACT-$VERSION"
 rm -rf "$out"
 mkdir -p "$out"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-python3 jvm-release/third-party.py notices jvm "$VERSION" "$work/THIRD_PARTY_NOTICES.txt"
+python3 release/third-party.py notices jvm "$VERSION" "$work/THIRD_PARTY_NOTICES.txt"
 cat > "$work/NOTICE" <<EOF
 $ARTIFACT $VERSION
 Copyright (C) Wire Swiss GmbH
@@ -101,9 +101,9 @@ built=()
     triple="${entry#*:}"
     triple="${triple%%/*}"
     [ -f "$library" ] || { echo "missing native library: $library" >&2; exit 1; }
-    stamp="$(cat "target/jvm-release/built/$triple" 2>/dev/null || true)"
+    stamp="$(cat "target/digits/built/$triple" 2>/dev/null || true)"
     if [ "$stamp" != "$commit" ] && [ "${UNRELEASED:-}" != 1 ]; then
-      echo "$library was built from ${stamp:-an unknown commit}, not $commit; run jvm-release/build.sh $triple" >&2
+      echo "$library was built from ${stamp:-an unknown commit}, not $commit; run release/build.sh $triple" >&2
       exit 1
     fi
     mkdir -p "$work/jar/$(dirname "$resource")"
@@ -124,8 +124,8 @@ cat > "$work/sources/NATIVE-SOURCES.md" <<EOF
 # Native sources
 
 The native libraries in $ARTIFACT-$VERSION.jar are built from the Rust sources of $REPO_URL, tag
-v$VERSION (commit $commit), with \`jvm-release/build.sh\`. That tag is Wire's CoreCrypto v$WIRE_VERSION
-with the changes of Schwarz Digits, which \`jvm-release/README.md\` describes. The manifest of the jar
+v$VERSION (commit $commit), with \`release/build.sh\`. That tag is Wire's CoreCrypto v$WIRE_VERSION
+with the changes of Schwarz Digits, which \`release/README.md\` describes. The manifest of the jar
 records the SHA-256 of each library.
 
 The Kotlin sources in this jar are those of Wire's release com.wire:$ARTIFACT:$WIRE_VERSION.
@@ -175,8 +175,8 @@ PROJECT="$(cat "$work/project.xml")" perl -0pe '
   s|\s*<modelVersion>.*?</scm>|\n$ENV{PROJECT}|s;
 ' "$wire/$ARTIFACT-$WIRE_VERSION.pom" > "$base.pom"
 
-python3 jvm-release/third-party.py sbom jvm "$VERSION" "$base-cyclonedx.json" "$base.pom" "$base.jar" "${built[@]}"
-python3 jvm-release/check.py "$VERSION"
+python3 release/third-party.py sbom jvm "$VERSION" "$base-cyclonedx.json" "$base.pom" "$base.jar" "${built[@]}"
+python3 release/check.py "$VERSION"
 
 m2="$HOME/.m2/repository/$(tr . / <<<"$GROUP")/$ARTIFACT/$VERSION"
 rm -rf "$m2"

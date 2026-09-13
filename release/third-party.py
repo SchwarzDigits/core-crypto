@@ -4,10 +4,10 @@
 The components are the Rust crates linked into core-crypto-ffi for the artifact's targets (normal
 dependencies, without proc-macros, which only run at build time), the C libraries those crates
 compile in, Wire's Kotlin bindings and the Maven dependencies of the POM. Licence texts come from
-each crate's own licence files; crates without any get the standard text from jvm-release/licenses/.
+each crate's own licence files; crates without any get the standard text from release/licenses/.
 
-  jvm-release/third-party.py notices <artifact> <version> <output file>
-  jvm-release/third-party.py sbom <artifact> <version> <output file> <pom> [[<name>=]<file> ...]
+  release/third-party.py notices <artifact> <version> <output file>
+  release/third-party.py sbom <artifact> <version> <output file> <pom> [[<name>=]<file> ...]
 
 <artifact> is jvm, android or ios, <version> Wire's version with the patch set, e.g. 10.5.2-digits.1.
 The files given to `sbom` are listed with their SHA-512, under <name> if given; a jar is taken as the
@@ -302,7 +302,7 @@ def sbom(artifact, version, output, pom, files):
         "version": 1,
         "metadata": {"timestamp": run("git", "log", "-1", "--format=%cI").strip(), "supplier": SUPPLIER,
                      "component": top,
-                     "tools": {"components": [{"type": "application", "name": "jvm-release/third-party.py",
+                     "tools": {"components": [{"type": "application", "name": "release/third-party.py",
                                                "version": commit}]}},
         "components": entries,
         "dependencies": [{"ref": top_purl, "dependsOn": [e["bom-ref"] for e in entries if e["type"] == "library"]}],

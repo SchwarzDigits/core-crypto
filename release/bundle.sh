@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Signs the publication that jvm-release/package.sh built, adds the checksums and zips it for the
+# Signs the publication that release/package.sh built, adds the checksums and zips it for the
 # Central Portal (https://central.sonatype.com, "Publish Component").
 #
-#   VERSION=10.5.2-digits.1 SIGNING_KEY=<OpenPGP key id> jvm-release/bundle.sh
+#   VERSION=10.5.2-digits.1 SIGNING_KEY=<OpenPGP key id> release/bundle.sh
 #
 # GnuPG asks for the key's passphrase, so run it in a terminal. The tag v<VERSION> has to point at
 # the commit the jar was built from. UNRELEASED=1 skips that check, for tests.
@@ -13,9 +13,9 @@ GROUP=schwarz.opensource.natrium
 ARTIFACT=core-crypto-jvm
 cd "$(dirname "$0")/.."
 path="$(tr . / <<<"$GROUP")/$ARTIFACT/$VERSION"
-out="target/jvm-release/maven/$path"
-bundle="target/jvm-release/$ARTIFACT-$VERSION-bundle.zip"
-[ -f "$out/$ARTIFACT-$VERSION.jar" ] || { echo "no publication in $out; run jvm-release/package.sh" >&2; exit 1; }
+out="target/digits/maven/$path"
+bundle="target/digits/$ARTIFACT-$VERSION-bundle.zip"
+[ -f "$out/$ARTIFACT-$VERSION.jar" ] || { echo "no publication in $out; run release/package.sh" >&2; exit 1; }
 
 built="$(unzip -p "$out/$ARTIFACT-$VERSION.jar" META-INF/MANIFEST.MF | tr -d '\r' | sed -n 's/^Built-From: [^ ]* //p')"
 tagged="$(git rev-parse -q --verify "refs/tags/v$VERSION^{commit}" || true)"
@@ -36,6 +36,6 @@ for f in sorted(pathlib.Path(sys.argv[1]).iterdir()):
         for alg in ("md5", "sha1", "sha256", "sha512"):
             pathlib.Path(f"{f}.{alg}").write_text(hashlib.new(alg, f.read_bytes()).hexdigest())
 EOF
-python3 jvm-release/check.py --signed "$VERSION"
-(cd target/jvm-release/maven && zip -qrX "../$(basename "$bundle")" "$path")
+python3 release/check.py --signed "$VERSION"
+(cd target/digits/maven && zip -qrX "../$(basename "$bundle")" "$path")
 echo "bundle: $bundle"
