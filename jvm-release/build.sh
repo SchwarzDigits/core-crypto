@@ -98,7 +98,10 @@ case "$target" in
     # and times of the object files.
     flags="$(host_rustflags) -C link-arg=-Wl,-install_name,@rpath/libcore_crypto_ffi.dylib"
     flags+=" -C link-arg=-Wl,-reproducible -C link-arg=-Wl,-oso_prefix,$repo/"
-    RUSTFLAGS="$flags" make "$rule" RELEASE=1
+    # The iOS rules build with cancellable-transactions, for Wire's Swift package. That feature adds a
+    # variant to CoreCryptoError before Other, so the Kotlin bindings, which come from ffi-library
+    # without it, couldn't read the errors of these libraries.
+    RUSTFLAGS="$flags" make "$rule" RELEASE=1 SWIFT_CARGO_BUILD_ARGS=--release
     ;;
   aarch64-linux-android | armv7-linux-androideabi | x86_64-linux-android)
     : "${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME to the Android NDK}"
