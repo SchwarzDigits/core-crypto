@@ -53,6 +53,10 @@ val copyJvmFfiLibraries by tasks.registering(Sync::class) {
     into(layout.buildDirectory.dir("jvmFfiLibraries"))
 }
 
+// LICENSE, NOTICE and THIRD_PARTY_NOTICES.txt for the jvm and android variants, which
+// release/publish-kmp.sh writes into <noticesDir>/<variant>/META-INF/core-crypto-kmp/.
+val noticesDir = (findProperty("noticesDir") as String?)?.let(::file)
+
 kotlin {
     jvmToolchain(25)
 
@@ -103,6 +107,7 @@ kotlin {
                 implementation(libs.jna)
             }
             resources.srcDir(copyJvmFfiLibraries)
+            noticesDir?.let { resources.srcDir(it.resolve("jvm")) }
         }
 
         val jvmTest by getting {
@@ -145,6 +150,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+
+    // The Android plugin takes its Java resources from its own source set, not from androidMain.
+    noticesDir?.let { sourceSets["main"].resources.srcDir(it.resolve("android")) }
 }
 
 cargo {

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""Third-party notices and a CycloneDX SBOM for one artifact of this branch.
+"""Third-party notices and a CycloneDX SBOM for one module of core-crypto-kmp.
 
-The components are the Rust crates linked into core-crypto-ffi for the artifact's targets (normal
+The components of a module are the Rust crates linked into core-crypto-ffi for its targets (normal
 dependencies, without proc-macros, which only run at build time), the C libraries those crates
-compile in, Wire's Kotlin bindings and the Maven dependencies of the POM. Licence texts come from
-each crate's own licence files; crates without any get the standard text from release/licenses/.
+compile in, and the Maven dependencies of its POM. Licence texts come from each crate's own licence
+files; crates without any get the standard text from release/licenses/.
 
-  release/third-party.py notices <artifact> <version> <output file>
-  release/third-party.py sbom <artifact> <version> <output file> <pom> [[<name>=]<file> ...]
+  release/third-party.py notices <module> <version> <output file>
+  release/third-party.py sbom <module> <version> <output file> <pom> <artifact> [<name>=<file> ...]
 
-<artifact> is jvm, android or ios, <version> Wire's version with the patch set, e.g. 10.5.2-digits.1.
-The files given to `sbom` are listed with their SHA-512, under <name> if given; a jar is taken as the
-artifact itself.
-Run it from the repository root.
+<module> is a Maven module of core-crypto-kmp, e.g. core-crypto-kmp-jvm, and <version> Wire's version
+with the patch set, e.g. 10.5.2-digits.1. The SBOM lists the module's artifact (its jar, aar or klib)
+and the named files, such as the native libraries in it, with their SHA-512. Run it from the
+repository root.
 """
 import hashlib
 import json
@@ -29,26 +29,23 @@ REPO_URL = "https://github.com/SchwarzDigits/core-crypto"
 SUPPLIER = {"name": "Schwarz Digits KG", "url": ["https://schwarz-it.com"]}
 WIRE = {"name": "Wire Swiss GmbH", "url": ["https://wire.com"]}
 
-ARTIFACTS = {
-    "jvm": {
-        "name": "core-crypto-jvm",
+# The modules of core-crypto-kmp: the Rust targets whose libraries they carry, and the C libraries
+# in those. The common module carries none.
+MODULES = {
+    "core-crypto-kmp": {"targets": [], "c_libraries": []},
+    "core-crypto-kmp-jvm": {
         "targets": ["x86_64-unknown-linux-gnu", "aarch64-unknown-linux-gnu", "aarch64-apple-darwin",
                     "x86_64-pc-windows-gnu"],
-        "features": [],
         "c_libraries": ["sqlite3mc"],
     },
-    "android": {
-        "name": "core-crypto-android",
+    "core-crypto-kmp-android": {
         "targets": ["aarch64-linux-android", "armv7-linux-androideabi", "x86_64-linux-android"],
-        "features": [],
         "c_libraries": ["sqlcipher", "openssl"],
     },
-    "ios": {
-        "name": "core-crypto-ios",
-        "targets": ["aarch64-apple-ios", "aarch64-apple-ios-sim"],
-        "features": ["cancellable-transactions"],
-        "c_libraries": ["sqlcipher", "openssl"],
-    },
+    "core-crypto-kmp-iosarm64": {"targets": ["aarch64-apple-ios"], "c_libraries": ["sqlcipher", "openssl"]},
+    "core-crypto-kmp-iossimulatorarm64": {"targets": ["aarch64-apple-ios-sim"],
+                                          "c_libraries": ["sqlcipher", "openssl"]},
+    "core-crypto-kmp-macosarm64": {"targets": ["aarch64-apple-darwin"], "c_libraries": ["sqlite3mc"]},
 }
 
 # The licence of CoreCrypto, in the repository's LICENSE. Crates of this repository under it are
@@ -61,6 +58,7 @@ MAVEN_LICENSES = {
     "org.jetbrains.kotlin": "Apache-2.0",
     "org.jetbrains.kotlinx": "Apache-2.0",
     "net.java.dev.jna": "LGPL-2.1-or-later OR Apache-2.0",
+    "androidx.annotation": "Apache-2.0",
 }
 LICENSE_FILE_PREFIXES = ("LICENSE", "LICENCE", "COPYING", "UNLICENSE", "NOTICE")
 STANDARD_TEXTS = [("MIT", "MIT.txt"), ("Apache-2.0", "Apache-2.0.txt"), ("MPL-2.0", "MPL-2.0.txt")]
@@ -77,22 +75,18 @@ def run(*args):
     return result.stdout
 
 
-def wire_version(version):
-    match = re.fullmatch(r"(\d+\.\d+\.\d+)-digits\.\d+", version)
-    if not match:
+def check_version(version):
+    if not re.fullmatch(r"\d+\.\d+\.\d+-digits\.\d+", version):
         raise SystemExit(f"version {version!r} is not <Wire's version>-digits.<n>")
-    return match.group(1)
 
 
 def linked_crates(spec):
-    """(name, version) of every crate linked into core-crypto-ffi for any of the artifact's targets."""
+    """(name, version) of every crate linked into core-crypto-ffi for any of the module's targets."""
     crates = set()
     for target in spec["targets"]:
-        args = ["cargo", "tree", "--locked", "--quiet", "-p", "core-crypto-ffi", "--target", target,
-                "--edges", "normal,no-proc-macro", "--prefix", "none", "--format", "{p}"]
-        if spec["features"]:
-            args += ["--features", ",".join(spec["features"])]
-        for line in run(*args).splitlines():
+        tree = run("cargo", "tree", "--locked", "--quiet", "-p", "core-crypto-ffi", "--target", target,
+                   "--edges", "normal,no-proc-macro", "--prefix", "none", "--format", "{p}")
+        for line in tree.splitlines():
             name, version = line.split()[:2]
             crates.add((name, version.lstrip("v")))
     return crates
@@ -124,7 +118,7 @@ def c_library(name, version, licence, author, purl, url, files, via, text=None):
 
 
 def c_libraries(spec, packages):
-    """The C libraries the artifact's crates compile in, with their licence files."""
+    """The C libraries the module's crates compile in, with their licence files."""
     libraries = []
     vendor = ROOT / "vendor/libsqlite3-sys"
     if "sqlite3mc" in spec["c_libraries"]:
@@ -161,6 +155,8 @@ def c_libraries(spec, packages):
 
 
 def components(spec):
+    if not spec["targets"]:
+        return [], []
     meta = json.loads(run("cargo", "metadata", "--format-version", "1", "--locked"))
     workspace = set(meta["workspace_members"])
     by_key = {}
@@ -180,9 +176,8 @@ def components(spec):
     return crates, c_libraries(spec, meta["packages"])
 
 
-def notices(artifact, version, output):
-    spec = ARTIFACTS[artifact]
-    crates, libraries = components(spec)
+def notices(module, version, output):
+    crates, libraries = components(MODULES[module])
     listed = [c for c in crates if not c["core"]]
     texts = {}  # licence text without whitespace -> (text, components that use it)
 
@@ -205,7 +200,7 @@ def notices(artifact, version, output):
         if library["text"]:
             add(library["text"], who)
 
-    lines = [f"THIRD-PARTY NOTICES for {GROUP}:{spec['name']}:{version}", "",
+    lines = [f"THIRD-PARTY NOTICES for {GROUP}:{module}:{version}", "",
              "This artifact is CoreCrypto by Wire Swiss GmbH, with changes by Schwarz Digits KG, licensed",
              "under the GNU General Public License v3.0 (see LICENSE). Its source code is at",
              f"{REPO_URL}, tag v{version}.", "",
@@ -245,21 +240,15 @@ def maven_dependencies(pom):
     return dependencies
 
 
-def sbom(artifact, version, output, pom, files):
-    spec = ARTIFACTS[artifact]
-    crates, libraries = components(spec)
+def sbom(module, version, output, pom, artifact, files):
+    crates, libraries = components(MODULES[module])
     commit = run("git", "rev-parse", "HEAD").strip()
-    top_purl = f"pkg:maven/{GROUP}/{spec['name']}@{version}"
-    top = {"type": "library", "bom-ref": top_purl, "group": GROUP, "name": spec["name"], "version": version,
+    top_purl = f"pkg:maven/{GROUP}/{module}@{version}"
+    top = {"type": "library", "bom-ref": top_purl, "group": GROUP, "name": module, "version": version,
            "purl": top_purl, "supplier": SUPPLIER, "licenses": [{"license": {"id": ARTIFACT_LICENSE}}],
+           "hashes": [{"alg": "SHA-512", "content": sha512(artifact)}],
            "externalReferences": [{"type": "vcs", "url": f"{REPO_URL}/tree/v{version}"}]}
     entries = []
-
-    bindings = f"pkg:maven/com.wire/{spec['name']}@{wire_version(version)}"
-    entries.append({"type": "library", "bom-ref": bindings, "group": "com.wire", "name": spec["name"],
-                    "version": wire_version(version), "purl": bindings, "supplier": WIRE,
-                    "description": "Kotlin bindings, the classes of Wire's release",
-                    "licenses": [{"license": {"id": ARTIFACT_LICENSE}}]})
     for crate in crates:
         purl = f"pkg:cargo/{crate['name']}@{crate['version']}"
         if crate["own"]:
@@ -289,13 +278,11 @@ def sbom(artifact, version, output, pom, files):
                         "purl": purl, "licenses": [{"expression": MAVEN_LICENSES[group]}],
                         "properties": [{"name": "maven:scope", "value": scope}]})
     for f in files:
-        name, _, path = f.rpartition("=")
-        hashes = [{"alg": "SHA-512", "content": sha512(path)}]
-        if path.endswith(".jar"):
-            top["hashes"] = hashes
-        else:
-            name = name or Path(path).name
-            entries.append({"type": "file", "bom-ref": f"file:{name}", "name": name, "hashes": hashes})
+        name, separator, path = f.partition("=")
+        if not separator:
+            raise SystemExit(f"{f}: files are given as <name>=<file>")
+        entries.append({"type": "file", "bom-ref": f"file:{name}", "name": name,
+                        "hashes": [{"alg": "SHA-512", "content": sha512(path)}]})
     document = {
         "bomFormat": "CycloneDX", "specVersion": "1.5",
         "serialNumber": "urn:uuid:" + str(uuid.uuid5(uuid.NAMESPACE_URL, f"{top_purl}#{commit}")),
@@ -313,13 +300,13 @@ def sbom(artifact, version, output, pom, files):
 
 def main():
     args = sys.argv[1:]
-    if len(args) < 4 or args[0] not in ("notices", "sbom") or args[1] not in ARTIFACTS:
+    if len(args) < 4 or args[0] not in ("notices", "sbom") or args[1] not in MODULES:
         raise SystemExit(__doc__)
-    wire_version(args[2])
-    if args[0] == "notices":
+    check_version(args[2])
+    if args[0] == "notices" and len(args) == 4:
         notices(*args[1:4])
-    elif len(args) >= 5:
-        sbom(*args[1:5], args[5:])
+    elif args[0] == "sbom" and len(args) >= 6:
+        sbom(*args[1:6], args[6:])
     else:
         raise SystemExit(__doc__)
 
