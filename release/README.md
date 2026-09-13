@@ -80,10 +80,29 @@ publication: the libraries in each module against `target/`, the licence files, 
 standard text in `release/licenses/` for crates that ship none. The crates of CoreCrypto under GPL-3.0 are the artifact
 itself and aren't listed.
 
+## CI
+
+`.github/workflows/digits-release.yml` runs these scripts in the fork:
+
+- A push to a `jvm/` branch builds the ten libraries on four runners (Linux x86_64 with Windows, Linux arm64, Android,
+  and macOS for the Apple ones, with Xcode 16.4), publishes into `target/digits/maven/` and checks the publication,
+  without signing or uploading. The version is `<Wire's version>-digits.0`.
+- A tag `v<Wire's version>-digits.<n>` does the same, then signs, bundles and uploads the publication to Maven Central,
+  which publishes it without a manual step.
+
+The last step runs in the environment `maven-central`, which only these tags may use. It holds the secrets:
+
+- `SIGNING_IN_MEMORY_KEY`: the ASCII-armoured secret key, `gpg --armor --export-secret-keys <key id>`,
+- `SIGNING_IN_MEMORY_KEY_PASSWORD`: its passphrase,
+- `MAVEN_CENTRAL_USERNAME` and `MAVEN_CENTRAL_PASSWORD`: a user token of the Central Portal.
+
+Wire's own workflows come along with each merge from upstream, and some of them start on any tag. After a merge,
+`release/disable-upstream-workflows.sh` disables all workflows in the fork but this one.
+
 ## Release
 
-1. Tag the commit as `v10.5.2-digits.1` and push the tag to SchwarzDigits/core-crypto. The notices and SBOMs refer to
-   it.
+1. Tag the commit as `v10.5.2-digits.1` and push the tag to SchwarzDigits/core-crypto. CI then builds, publishes and
+   uploads it. The steps below do the same by hand. The notices and SBOMs refer to the tag.
 
 1. Check out the tag (`git switch --detach v10.5.2-digits.1`), build the ten libraries, then run `publish-kmp.sh`.
 

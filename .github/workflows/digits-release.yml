@@ -1,0 +1,160 @@
+# Builds schwarz.opensource.natrium:core-crypto-kmp with release/, and for a tag v<Wire's version>-digits.<n>
+# publishes it on Maven Central. A push to a jvm/ branch builds and checks it without publishing.
+# See release/README.md.
+name: digits release
+
+on:
+  push:
+    branches: ["jvm/**"]
+    tags: ["v*-digits.*"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: digits-release-${{ github.ref }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # The Xcode of the Apple libraries; another one would build other bytes.
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
+jobs:
+  natives:
+    name: libraries (${{ matrix.name }})
+    strategy:
+      matrix:
+        include:
+          - name: linux-x86_64-windows
+            runs-on: ubuntu-24.04
+            targets: x86_64-unknown-linux-gnu x86_64-pc-windows-gnu
+          - name: linux-arm64
+            runs-on: ubuntu-24.04-arm
+            targets: aarch64-unknown-linux-gnu
+          - name: android
+            runs-on: ubuntu-24.04
+            targets: aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
+          - name: apple
+            runs-on: macos-15
+            targets: aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim
+    runs-on: ${{ matrix.runs-on }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      # CoreCrypto embeds the branch name and git describe; a checkout of the tag has no branch.
+      - run: git checkout --detach
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2.85.2
+        with:
+          tool: fd-find
+      - if: matrix.name == 'android'
+        uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+      - name: install the NDK that Wire pins
+        if: matrix.name == 'android'
+        run: |
+          ndk="$(cat crypto-ffi/bindings/android/ndk.version)"
+          echo y | sdkmanager --install "ndk;$ndk" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$ndk" >> "$GITHUB_ENV"
+      - name: build
+        env:
+          TARGETS: ${{ matrix.targets }}
+        run: for target in $TARGETS; do release/build.sh "$target"; done
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: libraries-${{ matrix.name }}
+          path: |
+            target/x86_64-unknown-linux-gnu/release/libcore_crypto_ffi.so
+            target/aarch64-unknown-linux-gnu/release/libcore_crypto_ffi.so
+            target/x86_64-pc-windows-gnu/release/core_crypto_ffi.dll
+            target/*-android*/release/libcore_crypto_ffi.so
+            target/aarch64-apple-darwin/release/libcore_crypto_ffi.dylib
+            target/aarch64-apple-*/release/libcore_crypto_ffi.a
+            target/digits/built/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: natives
+    runs-on: macos-15
+    timeout-minutes: 60
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - run: git checkout --detach
+      - id: version
+        name: version
+        # A tag names the version; a branch builds <Wire's version>-digits.0.
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="$(sed -n 's/^VERSION_NAME=//p' crypto-ffi/bindings/gradle.properties)-digits.0"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: taiki-e/install-action@41049aa56687c35e0afa74eed4f09cec4f9afabf # v2.85.2
+        with:
+          tool: fd-find
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: libraries-*
+          path: target
+          merge-multiple: true
+      - name: build the host library
+        run: release/build.sh ffi-library
+      - name: publish into target/digits/maven
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: JAVA_HOME="$JAVA_HOME_25_arm64" release/publish-kmp.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: publication
+          path: target/digits/maven/
+          if-no-files-found: error
+          retention-days: 7
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    # Only tags v*-digits.* may use this environment and its secrets.
+    environment: maven-central
+    env:
+      VERSION: ${{ needs.publish.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+      - run: git checkout --detach
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: libraries-*
+          path: target
+          merge-multiple: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: publication
+          path: target/digits/maven
+      - name: sign and bundle
+        env:
+          SIGNING_IN_MEMORY_KEY: ${{ secrets.SIGNING_IN_MEMORY_KEY }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_IN_MEMORY_KEY_PASSWORD }}
+        run: |
+          gpg --batch --import <<< "$SIGNING_IN_MEMORY_KEY"
+          SIGNING_KEY="$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr/ { print $10; exit }')"
+          SIGNING_KEY="$SIGNING_KEY" release/bundle.sh
+      - name: upload to Maven Central
+        env:
+          MAVEN_CENTRAL_USERNAME: ${{ secrets.MAVEN_CENTRAL_USERNAME }}
+          MAVEN_CENTRAL_PASSWORD: ${{ secrets.MAVEN_CENTRAL_PASSWORD }}
+        run: release/upload.sh

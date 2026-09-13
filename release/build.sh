@@ -80,6 +80,7 @@ in_linux() {
 linux_rule() {
   local arch="$1" platform="$2" rule="$3"
   if [ "$(uname -s)" = Linux ] && [ "$(uname -m)" = "$arch" ]; then
+    rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal
     RUSTFLAGS="$(remap_cargo "${CARGO_HOME:-$HOME/.cargo}")" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
   else
     in_linux "$platform" make "$rule" RELEASE=1 JVM_LINUX_MANYLINUX=1
@@ -105,6 +106,9 @@ case "$target" in
     ;;
   aarch64-linux-android | armv7-linux-androideabi | x86_64-linux-android)
     : "${ANDROID_NDK_HOME:?set ANDROID_NDK_HOME to the Android NDK}"
+    # The libraries depend on the NDK, whose version Wire pins; the stamp names any other.
+    ndk="$(sed -n 's/^Pkg\.Revision *= *//p' "$ANDROID_NDK_HOME/source.properties")"
+    [ "$ndk" = "$(cat crypto-ffi/bindings/android/ndk.version)" ] || note=" (NDK $ndk)"
     rustup toolchain install "$RUSTUP_TOOLCHAIN" --profile minimal --target "$target"
     case "$target" in
       aarch64-linux-android) rule=android-armv8 ;;
@@ -126,9 +130,10 @@ case "$target" in
     ;;
 esac
 ls -la "$out"/*core_crypto_ffi.*
-# release/package.sh packages the library only with the commit it was built from, in a clean and
-# detached checkout: CoreCrypto embeds the branch name, and a checkout of the tag has none.
+# release/publish-kmp.sh takes the library only if it was built from the current commit, in a clean
+# and detached checkout (CoreCrypto embeds the branch name, and a checkout of the tag has none), and
+# for Android with the NDK that Wire pins.
 mkdir -p target/digits/built
 branch="$(git symbolic-ref -q --short HEAD || true)"
-echo "$(git rev-parse HEAD)$([ -z "$(git status --porcelain)" ] || echo ' (dirty)')${branch:+ (on branch $branch)}" \
+echo "$(git rev-parse HEAD)$([ -z "$(git status --porcelain)" ] || echo ' (dirty)')${branch:+ (on branch $branch)}${note:-}" \
   > "target/digits/built/$target"

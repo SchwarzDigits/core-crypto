@@ -4,8 +4,9 @@
 #
 #   VERSION=10.5.2-digits.1 SIGNING_KEY=<OpenPGP key id> release/bundle.sh
 #
-# GnuPG asks for the key's passphrase, so run it in a terminal. The tag v<VERSION> has to point at the
-# current commit, which the publication was built from. UNRELEASED=1 skips that check, for tests.
+# GnuPG asks for the key's passphrase, so run it in a terminal; in CI, SIGNING_KEY_PASSWORD holds it.
+# The tag v<VERSION> has to point at the current commit, which the publication was built from.
+# UNRELEASED=1 skips that check, for tests.
 set -euo pipefail
 : "${VERSION:?set VERSION, e.g. 10.5.2-digits.1}"
 : "${SIGNING_KEY:?set SIGNING_KEY to the id of the OpenPGP key to sign with}"
@@ -23,12 +24,22 @@ if [ "$commit" != "$tagged" ] && [ "${UNRELEASED:-}" != 1 ]; then
   exit 1
 fi
 
-export GPG_TTY="${GPG_TTY:-$(tty)}"
+sign() {
+  if [ -n "${SIGNING_KEY_PASSWORD:-}" ]; then
+    gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 --local-user "$SIGNING_KEY" --armor \
+      --detach-sign "$1" <<<"$SIGNING_KEY_PASSWORD"
+  else
+    gpg --local-user "$SIGNING_KEY" --armor --detach-sign "$1"
+  fi
+}
+if tty -s; then
+  export GPG_TTY="${GPG_TTY:-$(tty)}"
+fi
 rm -f "$bundle"
 for dir in "${dirs[@]}"; do
   rm -f "$dir"/*.{asc,md5,sha1,sha256,sha512}
   for f in "$dir"/*; do
-    gpg --local-user "$SIGNING_KEY" --armor --detach-sign "$f"
+    sign "$f"
   done
 done
 python3 - "${dirs[@]}" <<'EOF'
