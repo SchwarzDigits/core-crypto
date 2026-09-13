@@ -56,6 +56,26 @@ a working tree without changes. `UNRELEASED=1` skips both checks for a test buil
 The manifest of the jar records the commit, the checksum of Wire's jar and the checksum of each native library. At the
 end, `jvm-release/check.py` compares the publication with Wire's release and checks the POM and the SBOM.
 
+## Kotlin Multiplatform
+
+`jvm-release/publish-kmp.sh` publishes `schwarz.opensource.natrium:core-crypto-kmp` with Wire's Gradle build of this
+branch into `target/jvm-release/maven/`; `--m2` also copies it into `~/.m2/repository`:
+
+```sh
+VERSION=10.5.2-digits.1 jvm-release/publish-kmp.sh --m2
+```
+
+- **jvm:** the libraries of Linux x86_64 and arm64, macOS arm64 and Windows x86_64, in the directories where JNA looks
+  for them. Wire's `core-crypto-kmp-jvm` carries none: Gobley puts the host's library into a separate jar that the
+  published metadata doesn't name.
+- **android:** arm64-v8a, armeabi-v7a and x86_64. The keystore uses SQLCipher and OpenSSL, as in Wire's build.
+- **iosarm64, iossimulatorarm64:** the static libraries in the cinterop klibs, also with SQLCipher and OpenSSL.
+- **macosarm64:** Kotlin/Native on macOS, with SQLite3 Multiple Ciphers.
+
+The script needs the ten libraries of `build.sh`, built from the current commit: the four JVM ones, the three Android
+ones (with the NDK in `ANDROID_NDK_HOME`), the two iOS ones (with Xcode) and `ffi-library`, the host library Gradle
+generates the Kotlin bindings from. Gradle needs JDK 25 (`JAVA_HOME`) and the Android SDK (`ANDROID_HOME`).
+
 ## Licences and SBOM
 
 `jvm-release/third-party.py` lists what an artifact contains:
