@@ -28,6 +28,7 @@ jobs:
   natives:
     name: libraries (${{ matrix.name }})
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: linux-x86_64-windows
@@ -57,6 +58,9 @@ jobs:
           tool: fd-find
       - if: matrix.name == 'android'
         uses: android-actions/setup-android@40fd30fb8d7440372e1316f5d1809ec01dcd3699 # v4.0.1
+        with:
+          # The default also installs the legacy "tools" package, which newer command-line tools no longer have.
+          packages: platform-tools
       - name: install the NDK that Wire pins
         if: matrix.name == 'android'
         run: |
