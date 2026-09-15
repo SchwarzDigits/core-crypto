@@ -1,12 +1,17 @@
 # Builds schwarz.opensource.natrium:core-crypto-kmp with release/, and for a tag v<Wire's version>-digits.<n>
-# publishes it on Maven Central. A push to a jvm/ branch builds and checks it without publishing.
+# publishes it on Maven Central. A push to a digits/ branch, or a pull request into digits/main, builds and
+# checks it without publishing. Changes to Markdown files alone don't build; tags always do.
 # See release/README.md.
 name: digits release
 
 on:
   push:
-    branches: ["jvm/**"]
+    branches: ["digits/**"]
     tags: ["v*-digits.*"]
+    paths-ignore: ["**/*.md"]
+  pull_request:
+    branches: ["digits/main"]
+    paths-ignore: ["**/*.md"]
 
 permissions:
   contents: read
